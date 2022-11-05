@@ -1,0 +1,178 @@
+---
+title: "Text_analysis_in_R.Rmd"
+author: "Prachi Nerkar"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Intro to text packages and functions in R
+
+Recall that text data are read as character strings in R. We will use the stringr package. We will learn to work with text data. 
+
+Here's an example of Nike's latest tweet.
+```{r}
+library(stringr)
+```
+
+Here's an example of Nike's tweet.
+```{r}
+nike_tweet <- "\"One of the greatest things a person can do is inspire others.”\n\nFrom a quiet winner to a vocal champion, the effec… https://t.co/7mUNnpiSOp"
+
+nike_tweet
+```
+## String operations
+
+Let us clean the data now using the following steps.
+1. Convert to lower case: This is useful so the same word is not treated differently based on case. Notice which words this affects by printing the tweet.
+```{r}
+nike_tweet <- tolower(nike_tweet)
+nike_tweet
+```
+2. Combine strings: We can also combine it with another text using paste.
+
+```{r}
+adidas_tweet <- "This is just the start of celebrating our Black Community. Learn more about Honoring Black Excellence at http://adidas.com/hbe or http://news.adidas.com"
+adidas_tweet <- tolower(adidas_tweet)
+adidas_tweet
+
+combined_tweet <- paste(nike_tweet, adidas_tweet,sep = " ")
+combined_tweet
+```
+3. Split strings: We can also split a string up into a number of strings using the str_split() function. Suppose we wanted to split the string by forward slash /. It creates a vector with each sub-string as an element of that vector. 
+
+```{r}
+split_vector <- str_split(combined_tweet, "/")
+# since split_vector is a list, you can draw parts of it using indexing
+# to access the vector containing the split strings, we need to use the [[ ]] list operator and get the first entry
+split_vector[[1]]
+# from this vector, we can get element 1, 2, 3, etc.
+split_vector[[1]][1]
+```
+
+4. Checking if string contains a certain word or phrase: Let's examine if the combined_tweet contains a http. If the result is 1, that means the string contains it.
+
+```{r}
+grep("http", combined_tweet)
+```
+
+5. Find and replace: Suppose we wanted to replace the name of the brand (i.e., adidas) with xxxx. Use str_replace_all. The first argument is the object where we want to replace characters, the second is the thing we want to replace, and the third is what we want to replace it with. 
+
+```{r}
+combined_tweet <- str_replace_all(combined_tweet, "adidas","xxxx")
+# similarly you can remove punctuations such as colon.
+# you can simply use ":" colon in quotes but REGEX rules suggest this usage
+# http://www.regular-expressions.info/characters.html
+combined_tweet <- str_replace_all(combined_tweet, "[\\:]+", "")
+# Similarly, if we used [0-9]+ it translates to "match any substring that is one or more contiguous numbers"
+combined_tweet <- str_replace_all(combined_tweet, "[0-9]+", "")
+# notice the number 7 in the t.co link is dropped
+```
+
+## Putting it all together: Cleaning text
+
+6. Create a function that will clean a string: remove any characters that are not letters, lowercase everything, and getting rid of extra spaces between words. Then we want to separate out each word (this is a process called tokenize) and recover a list of words used in the string.
+
+```{r}
+clean_string <- function(string){
+    # lowercase
+    temp <- tolower(string)
+    # remove everything that is not a number or letter
+    temp <- str_replace_all(temp,"[^a-zA-Z\\s]", " ")
+    # shrink down to just one white space by removing extra spaces using \\s
+    temp <- str_replace_all(temp,"[\\s]+", " ")
+    # Split it
+    temp <- str_split(temp, " ")[[1]]
+    # remove empty string from temp if you want
+    indexes <- which(temp == "")
+    if(length(indexes) > 0){
+      temp <- temp[-indexes]
+    } 
+    return(temp)
+}
+
+clean_string(combined_tweet)
+
+# you can also generate unique words only
+unique(clean_string(combined_tweet))
+
+# you can also count how many words relate to data, analytics, etc.
+
+cleaned_tweet <- clean_string(combined_tweet)
+sum(cleaned_tweet == "data")
+sum(cleaned_tweet == "analytics")
+sum(cleaned_tweet == "inspire")
+
+# for more, review https://www.tidytextmining.com/index.html
+
+```
+
+
+
+```{r}
+
+# another way to do this easily is to use tidytext package
+library(tidytext)
+library(dplyr)
+text_df <- tibble(text = combined_tweet)
+text_df <- text_df %>%
+  unnest_tokens(word, text)
+
+data(stop_words)
+
+text_df <- text_df %>%
+  anti_join(stop_words)
+
+text_df %>%
+  count(word, sort = TRUE) 
+
+library(ggplot2)
+
+text_df %>%
+  count(word, sort = TRUE) %>%
+  filter(n > 0) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(aes(n, word)) +
+  geom_col() +
+  labs(y = NULL)
+
+# see this and similar examples based on a tutorial here :https://www.mjdenny.com/Text_Processing_In_R.html
+```
+## Creating a measure of topic 
+
+```{r}
+# a measure of data analtics focus for your assignment can be how many tweets had data related words
+
+# note that this is a very simple/ crude way of finding topics in text. There are advanced approaches in topic modeling using machine learning. 
+
+mytweets_df <- read.csv("mytweets.csv")
+mytweets_df <- subset(mytweets_df, is.na(mytweets_df$replyToSID)) 
+# or use mytweets_df <- mytweets_df[which(is.na(mytweets_df$replyToSID)),]
+
+for (i in 1:nrow(mytweets_df)){
+  mytweets_df[i, "data"] <- sum(clean_string(mytweets_df$text[i]) == "technology"
+            | clean_string(mytweets_df$text[i]) == "analytics"
+            | clean_string(mytweets_df$text[i]) == "data")
+}
+
+# now add Nike's stock prices on those dates 
+mytweets_df$date <- as.Date(mytweets_df$created)
+mytweets_df <- arrange(mytweets_df, by = desc(date))
+
+# stock data Yahoo finance
+stocks <- read.csv("NKE.csv")
+head(stocks)
+stocks$date <- as.Date(stocks$Date)
+# 
+final_data <- merge(mytweets_df, stocks, by.x = "date", by.y = "date")
+summary(lm(final_data$Open ~ final_data$data))
+
+#can also use complex topic models, e.g., LDA 
+library(quanteda)
+library(seededlda)
+library(quanteda.textmodels)
+
+```
+
